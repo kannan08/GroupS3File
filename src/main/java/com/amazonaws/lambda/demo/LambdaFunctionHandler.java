@@ -87,16 +87,29 @@ public class LambdaFunctionHandler implements RequestHandler<Object, String> {
         BytesColumnVector e = (BytesColumnVector) batch.cols[4];
         BytesColumnVector f = (BytesColumnVector) batch.cols[5];
         BytesColumnVector g = (BytesColumnVector) batch.cols[6];
+        
+        long oneMb = 1000000;
+        long fileSize = 0;
         //---------------------------------------------------------
 		for (S3ObjectSummary  s3object : listing.getObjectSummaries()) {
 			
 			 try(S3Object obj = s3Client.getObject(bucketName, s3object.getKey());){
 		     if(s3object.getKey().contains(s3fileName)) {
 		     String data = getAsString(obj.getObjectContent());
+		     if(fileSize+obj.getObjectMetadata().getContentLength()>oneMb) {
+		    	 data = getAsString(obj.getObjectContent());
+		    	 s3Contant = s3Contant+ data;
+		     } else {
+				 s3Client.putObject(bucketName, "output/"+s3fileName+ context.getAwsRequestId() +"-" +date.getNano()+ ".txt", s3Contant).getMetadata().setContentType("plain/text");
+		    	 s3Contant ="";
+		    	 data = getAsString(obj.getObjectContent());
+		    	 s3Contant = s3Contant+ data;
+		     }
+		    
 		     context.getLogger().log("data: " + data);
-			 s3Contant = s3Contant+ data;
+			 
 			 Gson gson = new Gson();
-			 InputData inputData = gson.fromJson(data, InputData.class);
+			 InputData inputData = gson.fromJson(data.replace("=", ":"), InputData.class);
 			 int row = batch.size++;
 			 a.setVal(row, inputData.getIpaddress().getBytes());
 			 b.setVal(row, inputData.getSearchquery().getBytes());
@@ -119,8 +132,8 @@ public class LambdaFunctionHandler implements RequestHandler<Object, String> {
 					// TODO Auto-generated catch block
 					e1.printStackTrace();
 				}
-				s3Client.putObject(bucketName, "output/"+s3fileName+ context.getAwsRequestId() + ".orc", new File(orcFile));
-			s3Client.putObject(bucketName, "output/"+s3fileName+ context.getAwsRequestId() + ".txt", s3Contant).getMetadata().setContentType("plain/text");
+			s3Client.putObject(bucketName, "output/"+s3fileName+ context.getAwsRequestId() +"-" +date.getNano()+ ".orc", new File(orcFile));
+			s3Client.putObject(bucketName, "output/"+s3fileName+ context.getAwsRequestId() +"-" +date.getNano()+ ".txt", s3Contant).getMetadata().setContentType("plain/text");
 			}
 		} catch (AmazonServiceException e111) {
 			e111.printStackTrace();
