@@ -19,10 +19,13 @@ import org.apache.orc.Writer;
 
 import com.amazonaws.AmazonServiceException;
 import com.amazonaws.SdkClientException;
+import com.amazonaws.auth.AWSCredentials;
+import com.amazonaws.auth.BasicAWSCredentials;
 import com.amazonaws.regions.Regions;
 import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.amazonaws.services.s3.AmazonS3;
+import com.amazonaws.services.s3.AmazonS3Client;
 import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 import com.amazonaws.services.s3.model.CannedAccessControlList;
 import com.amazonaws.services.s3.model.ListObjectsV2Request;
@@ -46,7 +49,10 @@ public class LambdaFunctionHandler implements RequestHandler<Object, String> {
         LocalDateTime date = LocalDateTime.now();
         String s3fileName = date.getYear() + "-" + date.getMonthValue() + "-" + date.getDayOfMonth() + "-"
 				+ date.getHour();
-		AmazonS3 s3Client = AmazonS3ClientBuilder.standard().withRegion(clientRegion).enableForceGlobalBucketAccess().build();
+        AWSCredentials credentials = new BasicAWSCredentials(
+				"AKIAUAIRX2URMCQJSGLT", 
+				"hIF6GmVlpmEHvCgrk7EArlCJI00wGeqisbOx+NOw");
+		AmazonS3Client s3Client = new AmazonS3Client(credentials);
 		ListObjectsV2Request req = new ListObjectsV2Request().withBucketName(bucketName).withPrefix("input/");
 		ListObjectsV2Result listing = s3Client.listObjectsV2(req);
 		//ObjectListing listing = s3Client.listObjects(bucketName);
@@ -110,6 +116,7 @@ public class LambdaFunctionHandler implements RequestHandler<Object, String> {
 		    	 date = LocalDateTime.now();
 				 s3Client.putObject(bucketName, "output/"+s3fileName+ context.getAwsRequestId() +"-" +date.getNano()+ ".txt", s3Contant).getMetadata().setContentType("plain/text");
 		    	 s3Contant ="";
+		    	 fileSize = 0;
 		    	 data = getAsString(obj.getObjectContent());
 		    	 s3Contant = s3Contant+ data;
 		     }
