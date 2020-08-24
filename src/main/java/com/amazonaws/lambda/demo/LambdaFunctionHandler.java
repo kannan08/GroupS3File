@@ -24,6 +24,9 @@ import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3ClientBuilder;
+import com.amazonaws.services.s3.model.CannedAccessControlList;
+import com.amazonaws.services.s3.model.ListObjectsV2Request;
+import com.amazonaws.services.s3.model.ListObjectsV2Result;
 import com.amazonaws.services.s3.model.ObjectListing;
 import com.amazonaws.services.s3.model.S3Object;
 import com.amazonaws.services.s3.model.S3ObjectSummary;
@@ -43,10 +46,13 @@ public class LambdaFunctionHandler implements RequestHandler<Object, String> {
         LocalDateTime date = LocalDateTime.now();
         String s3fileName = date.getYear() + "-" + date.getMonthValue() + "-" + date.getDayOfMonth() + "-"
 				+ date.getHour();
-		AmazonS3 s3Client = AmazonS3ClientBuilder.standard().withRegion(clientRegion).build();
-		ObjectListing listing = s3Client.listObjects(bucketName);
+		AmazonS3 s3Client = AmazonS3ClientBuilder.standard().withRegion(clientRegion).enableForceGlobalBucketAccess().build();
+		ListObjectsV2Request req = new ListObjectsV2Request().withBucketName(bucketName).withPrefix("input/");
+		ListObjectsV2Result listing = s3Client.listObjectsV2(req);
+		//ObjectListing listing = s3Client.listObjects(bucketName);
+		context.getLogger().log("listing: " + listing.getKeyCount());
 		String s3Contant ="";
-		
+		// s3Client.setBucketAcl(bucketName,CannedAccessControlList.BucketOwnerFullControl);
 		//-----------------------------------------------
 		Configuration conf = new Configuration();
         TypeDescription schema = TypeDescription.createStruct()
@@ -92,14 +98,16 @@ public class LambdaFunctionHandler implements RequestHandler<Object, String> {
         long fileSize = 0;
         //---------------------------------------------------------
 		for (S3ObjectSummary  s3object : listing.getObjectSummaries()) {
-			
-			 try(S3Object obj = s3Client.getObject(bucketName, s3object.getKey());){
-		     if(s3object.getKey().contains(s3fileName)) {
-		     String data = getAsString(obj.getObjectContent());
-		     if(fileSize+obj.getObjectMetadata().getContentLength()>oneMb) {
+			context.getLogger().log("s3object.getKey(): " + s3object);
+			 if(s3object.getKey().endsWith(".txt"))
+			 {
+			 try(S3Object obj = s3Client.getObject(bucketName, s3object.getKey())){
+		     String data;
+		     if(fileSize+obj.getObjectMetadata().getContentLength()<oneMb) {
 		    	 data = getAsString(obj.getObjectContent());
 		    	 s3Contant = s3Contant+ data;
 		     } else {
+		    	 date = LocalDateTime.now();
 				 s3Client.putObject(bucketName, "output/"+s3fileName+ context.getAwsRequestId() +"-" +date.getNano()+ ".txt", s3Contant).getMetadata().setContentType("plain/text");
 		    	 s3Contant ="";
 		    	 data = getAsString(obj.getObjectContent());
@@ -109,7 +117,8 @@ public class LambdaFunctionHandler implements RequestHandler<Object, String> {
 		     context.getLogger().log("data: " + data);
 			 
 			 Gson gson = new Gson();
-			 InputData inputData = gson.fromJson(data.replace("=", ":"), InputData.class);
+			 InputData inputData = gson.fromJson(data, InputData.class);
+			 context.getLogger().log("inputData: " + inputData);
 			 int row = batch.size++;
 			 a.setVal(row, inputData.getIpaddress().getBytes());
 			 b.setVal(row, inputData.getSearchquery().getBytes());
@@ -117,13 +126,14 @@ public class LambdaFunctionHandler implements RequestHandler<Object, String> {
 			 d.setVal(row, inputData.getSessionID().getBytes());
 			 e.setVal(row, inputData.getUserid().getBytes());
 			 g.setVal(row, inputData.getTimestamp().getBytes());
-		     }
-			 context.getLogger().log("s3object.getKey(): " + s3object.getKey());
+			 
 			 }catch (final IOException e11) {
+				 e11.printStackTrace();
 
 		    }
 			
 		}
+		 }
 		try {
 			if(s3Contant!="") {
 				try {
@@ -132,6 +142,7 @@ public class LambdaFunctionHandler implements RequestHandler<Object, String> {
 					// TODO Auto-generated catch block
 					e1.printStackTrace();
 				}
+				date = LocalDateTime.now();
 			s3Client.putObject(bucketName, "output/"+s3fileName+ context.getAwsRequestId() +"-" +date.getNano()+ ".orc", new File(orcFile));
 			s3Client.putObject(bucketName, "output/"+s3fileName+ context.getAwsRequestId() +"-" +date.getNano()+ ".txt", s3Contant).getMetadata().setContentType("plain/text");
 			}
@@ -158,7 +169,7 @@ public class LambdaFunctionHandler implements RequestHandler<Object, String> {
         } finally {
             is.close();
         }
-        return sb.toString();
+        return sb.toString().replace("=", "\":\"").replace("{", "{\"").replace("}", "\"}").replace(", ", "\",\"");
     }
 
 }
